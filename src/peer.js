@@ -17,9 +17,14 @@ class Peer extends EventEmitter {
     if (!isDuplex(socket)) {
       throw new Error('socket must be a duplex stream')
     }
+    if (!Array.isArray(networks) || networks.length === 0) {
+      throw new Error('must specify an array of supported networks')
+    }
     super()
 
     this.error = this.error.bind(this)
+    this.onHello = this.wrapTryCatch(this.onHello)
+    // TODO: wrap other handler methods
 
     this.connectInfo = connectInfo
     this.networks = networks
@@ -37,12 +42,22 @@ class Peer extends EventEmitter {
       disconnect: this.close.bind(this)
     })
 
-    this.mux = mux(this.onStream)
+    this.mux = mux()
     socket.pipe(this.mux).pipe(socket)
 
     this.pxp = pxp(this.createStream('pxp'))
     this.pxp.once('hello', this.onHello.bind(this))
     this.sendHello()
+  }
+
+  wrapTryCatch (f) {
+    return function (...args) {
+      try {
+        f.call(this, ...args)
+      } catch (err) {
+        this.emit('error', err)
+      }
+    }.bind(this)
   }
 
   onceReady (f) {
@@ -86,7 +101,7 @@ class Peer extends EventEmitter {
     this.pxp.send('hello',
       PROTOCOL_VERSION,
       this.connectInfo,
-      Object.keys(this.networks)
+      this.networks
     )
   }
 
@@ -96,6 +111,14 @@ class Peer extends EventEmitter {
         `theirs=${version}, ours=${PROTOCOL_VERSION}`)
       return this.error(err)
     }
+
+    var commonNetworks = networks.filter(
+      (n) => this.networks.indexOf(n) !== -1)
+    if (commonNetworks.length === 0) {
+      let err = new Error('Peer does not have any networks in common.')
+      return this.error(err)
+    }
+
     this.remoteNetworks = networks
     this.remoteConnectInfo = connectInfo
     onObject(this.pxp).on({
