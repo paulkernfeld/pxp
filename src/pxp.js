@@ -26,7 +26,7 @@ class PXP extends EventEmitter {
       stream,
       json.parse()
     )
-    this.stream.on('data', this.onMessage.bind(this))
+    this.stream.on('data', this._onMessage.bind(this))
     this.stream.on('error', this.error.bind(this))
   }
 
@@ -35,12 +35,12 @@ class PXP extends EventEmitter {
     this.emit('error', err)
   }
 
-  onMessage (message) {
-    var [ command, nonce, args ] = message
-    if (message.length < 2) {
+  _onMessage (message) {
+    if (!Array.isArray(message) || message.length !== 3) {
       let err = new Error('Peer sent invalid PXP message')
       return this.error(err)
     }
+    var [ command, nonce, args ] = message
     if (!PXP_MESSAGES.includes(command)) {
       let err = new Error(`Peer sent unknown PXP message: "${command}"`)
       return this.error(err)
