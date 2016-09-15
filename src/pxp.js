@@ -41,7 +41,7 @@ class PXP extends EventEmitter {
       return this.error(err)
     }
     var [ command, nonce, args ] = message
-    if (!PXP_MESSAGES.includes(command)) {
+    if (PXP_MESSAGES.indexOf(command) === -1) {
       let err = new Error(`Peer sent unknown PXP message: "${command}"`)
       return this.error(err)
     }
