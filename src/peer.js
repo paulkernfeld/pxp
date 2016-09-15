@@ -1,7 +1,6 @@
 'use strict'
 
 const EventEmitter = require('events')
-const { isDuplex } = require('isstream')
 const old = require('old')
 const mux = require('multiplex')
 const random = require('hat')
@@ -11,6 +10,13 @@ const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
 const CANDIDATE_TIMEOUT = 15 * 1000
+
+function isDuplex (stream) {
+  return typeof stream === 'object' &&
+    typeof stream.pipe === 'function' &&
+    typeof stream.write === 'function' &&
+    typeof stream.read === 'function'
+}
 
 class Peer extends EventEmitter {
   constructor (socket, networks, connectInfo) {
