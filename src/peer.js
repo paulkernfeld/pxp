@@ -98,9 +98,7 @@ class Peer extends EventEmitter {
   }
 
   getConnectInfo () {
-    var connectInfo = assign({}, this.remoteConnectInfo)
-    connectInfo.pxp = true
-    return connectInfo
+    return this.remoteCconnectInfo
   }
 
   sendHello () {
@@ -130,13 +128,11 @@ class Peer extends EventEmitter {
     onObject(this.pxp).on({
       getpeers: this.onGetPeers.bind(this),
       relay: this.onRelay.bind(this),
-      upgrade: this.onUpgrade.bind(this)
+      upgrade: this.onUpgrade.bind(this),
+      connect: this.onConnect.bind(this)
     })
     if (this.selfIsAccepting()) {
       this.pxp.on('incoming', this.onIncoming.bind(this))
-    }
-    if (this.incoming) {
-      this.pxp.on('connect', this.onConnect.bind(this))
     }
     this.ready = true
     this.emit('ready')
@@ -214,6 +210,7 @@ class Peer extends EventEmitter {
     if (this.connected[network]) {
       var err = new Error('Peer tried to connect to network ' +
         `"${network}" twice`)
+      res(err.message)
       return this.error(err)
     }
     var stream = this.createDataStream(network, res)
@@ -229,6 +226,11 @@ class Peer extends EventEmitter {
   }
 
   connect (network, cb) {
+    if (this.networks.indexOf(network) === -1 ||
+    this.remoteNetworks.indexOf(network) === -1) {
+      let err = new Error(`Peer tried to connect for unsupported network "${network}"`)
+      return cb(err)
+    }
     if (this.connected[network]) {
       let err = new Error(`Already connected for network "${network}"`)
       return cb(err)

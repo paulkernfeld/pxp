@@ -21,6 +21,26 @@ function createMockPeer (stream) {
   return PXP(pxpStream)
 }
 
+function createPeers (cb) {
+  var streams = createStreams()
+  var peers = [
+    Peer(streams[0], [ 'test', '1' ]),
+    Peer(streams[1], [ 'test', '2' ])
+  ]
+  var maybeDone = () => {
+    if (peers[0].ready && peers[1].ready) cb(null, peers)
+  }
+  peers[0].once('ready', maybeDone)
+  peers[1].once('ready', maybeDone)
+}
+
+function isDuplex (stream) {
+  return typeof stream === 'object' &&
+    typeof stream.pipe === 'function' &&
+    typeof stream.write === 'function' &&
+    typeof stream.read === 'function'
+}
+
 test('create peer instances', function (t) {
   t.test('create with invalid stream', function (t) {
     try {
@@ -111,6 +131,112 @@ test('handshake', function (t) {
       t.end()
     })
     badPeer.send('hello', 1, null, [ 'bar' ])
+  })
+
+  t.test('normal handshake', function (t) {
+    t.plan(7)
+    var streams = createStreams()
+    var peer = Peer(streams[0], [ 'foo' ])
+    var peer2 = createMockPeer(streams[1])
+    peer2.once('hello', function ([ version, connectInfo, networks ]) {
+      t.pass('peer sent "hello" message')
+      t.equal(version, 1, 'correct version')
+      t.equal(connectInfo, null, 'null connectInfo')
+      t.deepEqual(networks, [ 'foo' ], 'correct networks')
+    })
+    peer.once('ready', function () {
+      t.pass('handshake successful')
+      t.notOk(peer.getConnectInfo(), 'empty connectInfo')
+      t.equal(peer.isAccepting(), false, 'peer not accepting incoming connections')
+    })
+    peer2.send('hello', 1, null, [ 'foo' ])
+  })
+
+  t.end()
+})
+
+test('connect', function (t) {
+  t.test('connect on locally unsupported network', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].connect('2', function (err, stream) {
+        t.ok(err, 'got error')
+        t.equal(err.message, 'Peer tried to connect for unsupported network "2"', 'correct error message')
+        t.end()
+      })
+    })
+  })
+
+  t.test('connect on remote unsupported network', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].connect('1', function (err, stream) {
+        t.ok(err, 'got error')
+        t.equal(err.message, 'Peer tried to connect for unsupported network "1"', 'correct error message')
+        t.end()
+      })
+    })
+  })
+
+  t.test('connect on duplicate network', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].connect('test', function (err, stream) {
+        t.error(err, 'no error')
+        t.ok(stream, 'got stream')
+        peers[0].connect('test', function (err, stream) {
+          t.ok(err, 'got error')
+          t.equal(err.message, 'Already connected for network "test"', 'correct error message')
+          t.end()
+        })
+      })
+    })
+  })
+
+  t.test('connect on duplicate network', function (t) {
+    t.plan(7)
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].connect('test', function (err, stream) {
+        t.error(err, 'no error')
+        t.ok(stream, 'got stream')
+        peers[1].once('error', function (err) {
+          t.pass('receiving peer emitted error')
+          t.equal(err.message, 'Peer tried to connect to network "test" twice', 'correct error message')
+        })
+        peers[0].pxp.send('connect', 'test', function (err) {
+          t.ok(err, 'got error')
+          t.equal(err, 'Peer tried to connect to network "test" twice', 'correct error message')
+        })
+      })
+    })
+  })
+
+  t.test('normal connect', function (t) {
+    t.plan(11)
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].once('connect:test', function (stream) {
+        t.pass('peer emitted connect:<network> event')
+        t.ok(stream, 'got stream')
+        t.ok(isDuplex(stream), 'stream is duplex stream')
+        stream.write('foo')
+        stream.once('data', function (data) {
+          t.pass('got stream data')
+          t.equal(data.toString(), 'bar', 'correct data')
+        })
+      })
+      peers[0].connect('test', function (err, stream) {
+        t.error(err, 'no error')
+        t.ok(stream, 'got stream')
+        t.ok(isDuplex(stream), 'stream is a duplex stream')
+        stream.write('bar')
+        stream.once('data', function (data) {
+          t.pass('got stream data')
+          t.equal(data.toString(), 'foo', 'correct data')
+        })
+      })
+    })
   })
 
   t.end()
