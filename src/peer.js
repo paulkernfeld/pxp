@@ -5,7 +5,6 @@ const old = require('old')
 const mux = require('multiplex')
 const random = require('hat')
 const onObject = require('on-object')
-const assign = require('object-assign')
 const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
@@ -23,13 +22,14 @@ class Peer extends EventEmitter {
     if (!isDuplex(socket)) {
       throw new Error('socket must be a duplex stream')
     }
-    if (!Array.isArray(networks) || networks.length === 0) {
-      throw new Error('must specify an array of supported networks')
+    if (!networks || Object.keys(networks).length === 0) {
+      throw new Error('must specify supported networks')
     }
     super()
 
     this.error = this.error.bind(this)
     this.onHello = this.wrapTryCatch(this.onHello)
+    this.onGetPeers = this.wrapTryCatch(this.onGetPeers)
     // TODO: wrap other handler methods
 
     this.connectInfo = connectInfo
@@ -98,14 +98,14 @@ class Peer extends EventEmitter {
   }
 
   getConnectInfo () {
-    return this.remoteCconnectInfo
+    return this.remoteConnectInfo
   }
 
   sendHello () {
     this.pxp.send('hello',
       PROTOCOL_VERSION,
       this.connectInfo,
-      this.networks
+      Object.keys(this.networks)
     )
   }
 
@@ -117,7 +117,7 @@ class Peer extends EventEmitter {
     }
 
     var commonNetworks = networks.filter(
-      (n) => this.networks.indexOf(n) !== -1)
+      (n) => Object.keys(this.networks).indexOf(n) !== -1)
     if (commonNetworks.length === 0) {
       let err = new Error('Peer does not have any networks in common.')
       return this.error(err)
@@ -142,16 +142,37 @@ class Peer extends EventEmitter {
     if (!this.networks[network]) {
       let err = new Error('Peer requested an unknown network:' +
           `"${network}"`)
+      res(err.message)
       return this.error(err)
     }
     var getPeers = this.networks[network]
-    getPeers((err, peers) => {
-      if (err) return this.error(err)
+    if (typeof getPeers !== 'function') {
+      var err = new Error(`Invalid getPeers function for network "${network}"`)
+      return this.error('error', err)
+    }
+    getPeers.call(this, (err, peers) => {
+      if (err) {
+        res(err.message)
+        return this.error(err)
+      }
       peers = peers.filter((p) => p !== this)
-      var peerInfo = peers.map((peer) => {
+      var peerInfo = []
+      for (let peer of peers) {
         var id = this.addCandidate(peer)
-        return [ id, peer.getConnectInfo() ]
-      })
+        var connectInfo
+        if (peer instanceof Peer) {
+          connectInfo = peer.getConnectInfo()
+        } else if (isDuplex(peer)) {
+          connectInfo = peer.getConnectInfo ? peer.getConnectInfo() : {
+            relay: true,
+            pxp: false
+          }
+        } else {
+          let err = new Error('Invalid peer object, must be a duplex stream or Peer instance')
+          return this.emit('error', err)
+        }
+        peerInfo.push([ id, connectInfo ])
+      }
       res(null, peerInfo)
     })
   }
@@ -226,7 +247,7 @@ class Peer extends EventEmitter {
   }
 
   connect (network, cb) {
-    if (this.networks.indexOf(network) === -1 ||
+    if (Object.keys(this.networks).indexOf(network) === -1 ||
     this.remoteNetworks.indexOf(network) === -1) {
       let err = new Error(`Peer tried to connect for unsupported network "${network}"`)
       return cb(err)
@@ -249,9 +270,11 @@ class Peer extends EventEmitter {
         let err = new Error('Peer sent invalid response to "getpeers"')
         return cb(err)
       }
-      if (peers.length === 0) {
-        let err = new Error('Got empty reponse for "getpeers"')
-        return cb(err)
+      for (let peer of peers) {
+        if (!Array.isArray(peer) || peer.length !== 2) {
+          let err = new Error('Peer sent invalid candidate peer')
+          return cb(err)
+        }
       }
       cb(null, peers)
     })

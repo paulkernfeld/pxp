@@ -21,11 +21,15 @@ function createMockPeer (stream) {
   return PXP(pxpStream)
 }
 
-function createPeers (cb) {
+function createPeers (getPeers, cb) {
+  if (!cb) {
+    cb = getPeers
+    getPeers = function (cb) { cb(new Error('Not implemented')) }
+  }
   var streams = createStreams()
   var peers = [
-    Peer(streams[0], [ 'test', '1' ]),
-    Peer(streams[1], [ 'test', '2' ])
+    Peer(streams[0], { test: getPeers, '1': getPeers }, { webrtc: true }),
+    Peer(streams[1], { test: getPeers, '2': getPeers }, { webrtc: true })
   ]
   var maybeDone = () => {
     if (peers[0].ready && peers[1].ready) cb(null, peers)
@@ -39,6 +43,10 @@ function isDuplex (stream) {
     typeof stream.pipe === 'function' &&
     typeof stream.write === 'function' &&
     typeof stream.read === 'function'
+}
+
+function noopGetPeers (cb) {
+  cb(new Error('Noop'))
 }
 
 test('create peer instances', function (t) {
@@ -60,7 +68,7 @@ test('create peer instances', function (t) {
       t.notOk(peer, 'should have thrown')
     } catch (err) {
       t.ok(err, 'error thrown')
-      t.equal(err.message, 'must specify an array of supported networks', 'correct error message')
+      t.equal(err.message, 'must specify supported networks', 'correct error message')
       t.end()
     }
   })
@@ -68,18 +76,18 @@ test('create peer instances', function (t) {
   t.test('create with empty networks list', function (t) {
     var stream = createStreams()[0]
     try {
-      var peer = Peer(stream, [])
+      var peer = Peer(stream, {})
       t.notOk(peer, 'should have thrown')
     } catch (err) {
       t.ok(err, 'error thrown')
-      t.equal(err.message, 'must specify an array of supported networks', 'correct error message')
+      t.equal(err.message, 'must specify supported networks', 'correct error message')
       t.end()
     }
   })
 
   t.test('create with empty connectInfo', function (t) {
     var stream = createStreams()[0]
-    var peer = Peer(stream, [ 'foo' ])
+    var peer = Peer(stream, { foo: true })
     t.ok(peer instanceof Peer, 'created Peer instance')
     t.equal(peer.selfIsAccepting(), false, 'peer is not accepting connections')
     t.end()
@@ -87,7 +95,7 @@ test('create peer instances', function (t) {
 
   t.test('create with connectInfo', function (t) {
     var stream = createStreams()[0]
-    var peer = Peer(stream, [ 'foo' ], { webrtc: true })
+    var peer = Peer(stream, { foo: noopGetPeers }, { webrtc: true })
     t.ok(peer instanceof Peer, 'created Peer instance')
     t.equal(peer.selfIsAccepting(), true, 'peer is accepting connections')
     t.end()
@@ -99,7 +107,7 @@ test('create peer instances', function (t) {
 test('handshake', function (t) {
   t.test('different versions', function (t) {
     var streams = createStreams()
-    var peer = Peer(streams[0], [ 'foo' ])
+    var peer = Peer(streams[0], { foo: noopGetPeers })
     var badPeer = createMockPeer(streams[1])
     peer.once('error', function (err) {
       t.ok(err, 'got error event')
@@ -111,7 +119,7 @@ test('handshake', function (t) {
 
   t.test('invalid networks list', function (t) {
     var streams = createStreams()
-    var peer = Peer(streams[0], [ 'foo' ])
+    var peer = Peer(streams[0], { foo: noopGetPeers })
     var badPeer = createMockPeer(streams[1])
     peer.once('error', function (err) {
       t.ok(err, 'got error event')
@@ -123,7 +131,7 @@ test('handshake', function (t) {
 
   t.test('no networks in common', function (t) {
     var streams = createStreams()
-    var peer = Peer(streams[0], [ 'foo' ])
+    var peer = Peer(streams[0], { foo: noopGetPeers })
     var badPeer = createMockPeer(streams[1])
     peer.once('error', function (err) {
       t.ok(err, 'got error event')
@@ -136,7 +144,7 @@ test('handshake', function (t) {
   t.test('normal handshake', function (t) {
     t.plan(7)
     var streams = createStreams()
-    var peer = Peer(streams[0], [ 'foo' ])
+    var peer = Peer(streams[0], { foo: noopGetPeers })
     var peer2 = createMockPeer(streams[1])
     peer2.once('hello', function ([ version, connectInfo, networks ]) {
       t.pass('peer sent "hello" message')
@@ -235,6 +243,128 @@ test('connect', function (t) {
           t.pass('got stream data')
           t.equal(data.toString(), 'foo', 'correct data')
         })
+      })
+    })
+  })
+
+  t.end()
+})
+
+test('getpeers', function (t) {
+  t.test('getpeers with empty response', function (t) {
+    t.plan(6)
+    function getPeers (cb) {
+      cb(null, [])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].pxp.once('getpeers', function (network) {
+        t.pass('peer 2 received "getpeers" request')
+        t.equal(network, 'test', 'correct network')
+      })
+      peers[1].getPeers('test', function (err, peers) {
+        t.error(err, 'no error')
+        t.ok(Array.isArray(peers), 'got peers array')
+        t.equal(peers.length, 0, 'no peers')
+      })
+    })
+  })
+
+  t.test('getpeers with invalid response type (local handler)', function (t) {
+    function getPeers (cb) {
+      cb(null, 123)
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].once('error', function (err) {
+        t.pass('receiving peer emitted error event')
+        t.equal(err.message, 'peers.filter is not a function',
+          'correct error message')
+        t.end()
+      })
+      peers[1].getPeers('test', function () {})
+    })
+  })
+
+  t.test('getpeers with invalid response type (remote handler)', function (t) {
+    var streams = createStreams()
+    var peer = Peer(streams[0], { foo: noopGetPeers })
+    var badPeer = createMockPeer(streams[1])
+    badPeer.on('getpeers', function (network, res) {
+      t.pass('received getpeers request')
+      res(null, 123)
+    })
+    peer.getPeers('foo', function (err) {
+      t.ok(err, 'got error')
+      t.equal(err.message, 'Peer sent invalid response to "getpeers"', 'correct error message')
+      t.end()
+    })
+  })
+
+  t.test('getpeers with invalid peer type (local handler)', function (t) {
+    function getPeers (cb) {
+      cb(null, [ 1, 2, 3 ])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].once('error', function (err) {
+        t.ok(err, 'peer emitted error event')
+        t.equal(err.message, 'Invalid peer object, must be a duplex stream or Peer instance', 'correct error message')
+        t.end()
+      })
+      peers[1].getPeers('test', function () {})
+    })
+  })
+
+  t.test('getpeers with invalid peer type (remote handler)', function (t) {
+    var streams = createStreams()
+    var peer = Peer(streams[0], { foo: noopGetPeers })
+    var badPeer = createMockPeer(streams[1])
+    badPeer.on('getpeers', function (network, res) {
+      t.pass('received getpeers request')
+      res(null, [ 1, 2, 3 ])
+    })
+    peer.getPeers('foo', function (err) {
+      t.ok(err, 'got error')
+      t.equal(err.message, 'Peer sent invalid candidate peer', 'correct error message')
+      t.end()
+    })
+  })
+
+  t.test('simple getPeers', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      function getPeers (cb) {
+        cb(null, [ peers[0] ])
+      }
+      createPeers(getPeers, function (err, peers) {
+        t.error(err, 'no error')
+        peers[1].getPeers('test', function (err, peers) {
+          t.error(err, 'no error')
+          t.ok(Array.isArray(peers), 'got peers array')
+          t.equal(peers.length, 1, 'peers.length === 1')
+          t.equal(typeof peers[0][0], 'string', 'peer has id')
+          t.deepEqual(peers[0][1], { webrtc: true }, 'correct connectInfo')
+          t.end()
+        })
+      })
+    })
+  })
+
+  t.test('getPeers with duplex stream', function (t) {
+    var streams = createStreams()
+    function getPeers (cb) {
+      cb(null, [ streams[0] ])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].getPeers('test', function (err, peers) {
+        t.error(err, 'no error')
+        t.ok(Array.isArray(peers), 'got peers array')
+        t.equal(peers.length, 1, 'peers.length === 1')
+        t.equal(typeof peers[0][0], 'string', 'peer has id')
+        t.deepEqual(peers[0][1], { relay: true, pxp: false }, 'correct connectInfo')
+        t.end()
       })
     })
   })
