@@ -27,9 +27,10 @@ function createPeers (getPeers, cb) {
     getPeers = function (cb) { cb(new Error('Not implemented')) }
   }
   var streams = createStreams()
+  var connectInfo = { pxp: true, relay: true, webrtc: true }
   var peers = [
-    Peer(streams[0], { test: getPeers, '1': getPeers }, { webrtc: true }),
-    Peer(streams[1], { test: getPeers, '2': getPeers }, { webrtc: true })
+    Peer(streams[0], { test: getPeers, '1': getPeers }, connectInfo),
+    Peer(streams[1], { test: getPeers, '2': getPeers }, connectInfo)
   ]
   var maybeDone = () => {
     if (peers[0].ready && peers[1].ready) cb(null, peers)
@@ -95,7 +96,7 @@ test('create peer instances', function (t) {
 
   t.test('create with connectInfo', function (t) {
     var stream = createStreams()[0]
-    var peer = Peer(stream, { foo: noopGetPeers }, { webrtc: true })
+    var peer = Peer(stream, { foo: noopGetPeers }, { pxp: true })
     t.ok(peer instanceof Peer, 'created Peer instance')
     t.equal(peer.selfIsAccepting(), true, 'peer is accepting connections')
     t.end()
@@ -309,7 +310,7 @@ test('getpeers', function (t) {
       t.error(err, 'no error')
       peers[0].once('error', function (err) {
         t.ok(err, 'peer emitted error event')
-        t.equal(err.message, 'Invalid peer object, must be a duplex stream or Peer instance', 'correct error message')
+        t.equal(err.message, 'Invalid peer object, must be a Peer instance or a function', 'correct error message')
         t.end()
       })
       peers[1].getPeers('test', function () {})
@@ -343,8 +344,12 @@ test('getpeers', function (t) {
           t.error(err, 'no error')
           t.ok(Array.isArray(peers), 'got peers array')
           t.equal(peers.length, 1, 'peers.length === 1')
-          t.equal(typeof peers[0][0], 'string', 'peer has id')
-          t.deepEqual(peers[0][1], { webrtc: true }, 'correct connectInfo')
+          t.equal(typeof peers[0].id, 'string', 'peer has id')
+          t.deepEqual(peers[0].connectInfo, {
+            pxp: true,
+            relay: true,
+            webrtc: true
+          }, 'correct connectInfo')
           t.end()
         })
       })
@@ -362,9 +367,77 @@ test('getpeers', function (t) {
         t.error(err, 'no error')
         t.ok(Array.isArray(peers), 'got peers array')
         t.equal(peers.length, 1, 'peers.length === 1')
-        t.equal(typeof peers[0][0], 'string', 'peer has id')
-        t.deepEqual(peers[0][1], { relay: true, pxp: false }, 'correct connectInfo')
+        t.equal(typeof peers[0].id, 'string', 'peer has id')
+        t.deepEqual(peers[0].connectInfo, { relay: true, pxp: false }, 'correct connectInfo')
         t.end()
+      })
+    })
+  })
+
+  t.end()
+})
+
+test('relay', function (t) {
+  t.test('relay to simple peer candidate', function (t) {
+    t.plan(11)
+    createPeers(function (err, peers1) {
+      t.error(err, 'no error')
+      function getPeers (cb) {
+        cb(null, [ peers1[0] ])
+      }
+      createPeers(getPeers, function (err, peers2) {
+        t.error(err, 'no error')
+        peers2[1].getPeers('test', function (err, candidates) {
+          t.error(err, 'no error')
+          t.ok(Array.isArray(candidates), 'got candidates array')
+          t.ok(candidates.length === 1, '1 candidate')
+          peers1[1].on('incoming', function (stream) {
+            t.pass('remote peer emitted "incoming" event')
+            t.ok(isDuplex(stream), 'got duplex stream')
+            stream.on('data', function (data) {
+              t.equal(data.toString(), 'foo', 'correct stream data')
+            })
+            stream.write('bar')
+          })
+          peers2[1].relay(candidates[0], function (err, stream) {
+            t.error(err, 'no error')
+            t.ok(isDuplex(stream), 'got duplex stream')
+            stream.on('data', function (data) {
+              t.equal(data.toString(), 'bar', 'correct stream data')
+            })
+            stream.write('foo')
+          })
+        })
+      })
+    })
+  })
+
+  t.test('relay to function peer candidate', function (t) {
+    t.plan(9)
+    var streams
+    function getPeers (cb) {
+      streams = createStreams()
+      cb(null, [ function (cb) { cb(null, streams[0]) } ])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].getPeers('test', function (err, candidates) {
+        t.error(err, 'no error')
+        t.ok(Array.isArray(candidates), 'got candidates array')
+        t.ok(candidates.length === 1, '1 candidate')
+        streams[1].on('data', function (data) {
+          t.pass('stream got data')
+          t.equal(data.toString(), '456', 'correct stream data (456)')
+        })
+        streams[1].write('123')
+        peers[1].relay(candidates[0], function (err, stream) {
+          t.error(err, 'no error')
+          t.ok(isDuplex(stream), 'got duplex stream')
+          stream.on('data', function (data) {
+            t.equal(data.toString(), '123', 'correct stream data (123)')
+          })
+          stream.write('456')
+        })
       })
     })
   })

@@ -162,16 +162,16 @@ class Peer extends EventEmitter {
         var connectInfo
         if (peer instanceof Peer) {
           connectInfo = peer.getConnectInfo()
-        } else if (isDuplex(peer)) {
+        } else if (typeof peer === 'function' || isDuplex(peer)) {
           connectInfo = peer.getConnectInfo ? peer.getConnectInfo() : {
             relay: true,
             pxp: false
           }
         } else {
-          let err = new Error('Invalid peer object, must be a duplex stream or Peer instance')
+          let err = new Error('Invalid peer object, must be a Peer instance or a function')
           return this.emit('error', err)
         }
-        peerInfo.push([ id, connectInfo ])
+        peerInfo.push({ id, network, connectInfo })
       }
       res(null, peerInfo)
     })
@@ -188,14 +188,13 @@ class Peer extends EventEmitter {
     return id
   }
 
-  onRelay ([ network, to ], res) {
+  onRelay ([ to ], res) {
     // TODO: rate limiting
     // TODO: ensure there isn't already a relay to this destination
     var sourceStream = this.createStream(`relay:${to}`)
     var dest = this.candidates[to]
     if (!dest) {
-      let err = new Error('Peer requested unknown candidate: ' +
-        `network=${network},id=${to}`)
+      let err = new Error(`Peer requested unknown candidate: id=${to}`)
       res(err.message)
       return this.error(err)
     }
@@ -212,15 +211,21 @@ class Peer extends EventEmitter {
         connectRelay(destStream)
       })
     } else if (typeof dest === 'function') {
-      var destStream = dest()
-      connectRelay(destStream)
+      dest.call(this, (err, stream) => {
+        if (err) return this.error(err)
+        if (!isDuplex(stream)) {
+          let err = new Error('Candidate function must pass (err, stream) to callback')
+          return this.error(err)
+        }
+        connectRelay(stream)
+      })
     }
   }
 
   onIncoming ([ id ], res) {
     var stream = this.createStream(`relay:${id}`)
+    res(null)
     this.emit('incoming', stream)
-    res()
   }
 
   onUpgrade ([ transport, connectInfo ], res) {
@@ -271,7 +276,7 @@ class Peer extends EventEmitter {
         return cb(err)
       }
       for (let peer of peers) {
-        if (!Array.isArray(peer) || peer.length !== 2) {
+        if (!peer.id || !peer.network) {
           let err = new Error('Peer sent invalid candidate peer')
           return cb(err)
         }
@@ -280,10 +285,10 @@ class Peer extends EventEmitter {
     })
   }
 
-  relay (network, to, cb) {
-    this.pxp.send('relay', [ network, to ], (err) => {
+  relay (candidate, cb) {
+    this.pxp.send('relay', [ candidate.id ], (err) => {
       if (err) return cb(new Error(err))
-      var relay = this.createStream(`relay:${to}`)
+      var relay = this.createStream(`relay:${candidate.id}`)
       cb(null, relay)
     })
   }
