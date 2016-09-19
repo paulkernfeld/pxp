@@ -147,7 +147,10 @@ test('handshake', function (t) {
     var streams = createStreams()
     var peer = Peer(streams[0], { foo: noopGetPeers })
     var peer2 = createMockPeer(streams[1])
-    peer2.once('hello', function ([ version, connectInfo, networks ]) {
+    peer2.once('hello', function (hello) {
+      var version = hello[0]
+      var connectInfo = hello[1]
+      var networks = hello[2]
       t.pass('peer sent "hello" message')
       t.equal(version, 1, 'correct version')
       t.equal(connectInfo, null, 'null connectInfo')
