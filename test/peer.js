@@ -374,10 +374,54 @@ test('getpeers', function (t) {
     })
   })
 
+  t.test('getPeers error', function (t) {
+    t.plan(4)
+    function getPeers (cb) {
+      cb(new Error('error'))
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].once('error', function (err) {
+        t.pass('got error event')
+        t.equal(err.message, 'error', 'correct error message')
+      })
+      peers[1].getPeers('test', function (err, peers) {
+        t.ok(err, 'got error')
+      })
+    })
+  })
+
+  t.test('invalid getPeers function', function (t) {
+    t.plan(3)
+    createPeers(123, function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].once('error', function (err) {
+        t.pass('got error event')
+        t.equal(err.message, 'Invalid getPeers function for network "test"', 'correct error message')
+      })
+      peers[1].getPeers('test', function () {})
+    })
+  })
+
   t.end()
 })
 
 test('relay', function (t) {
+  t.test('relay to unknown peer candidate', function (t) {
+    t.plan(5)
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].once('error', function (err) {
+        t.pass('got error event')
+        t.equal(err.message, 'Peer requested unknown candidate: id=foo', 'correct error message')
+      })
+      peers[1].relay({ id: 'foo', network: 'bar' }, function (err) {
+        t.ok(err, 'got error')
+        t.equal(err.message, 'Peer requested unknown candidate: id=foo', 'correct error message')
+      })
+    })
+  })
+
   t.test('relay to simple peer candidate', function (t) {
     t.plan(11)
     createPeers(function (err, peers1) {
@@ -442,5 +486,74 @@ test('relay', function (t) {
     })
   })
 
+  t.test('invalid peer candidate function', function (t) {
+    function getPeers (cb) {
+      cb(null, [ function (cb) { cb(null, 123) } ])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].getPeers('test', function (err, candidates) {
+        t.error(err, 'no error')
+        t.ok(Array.isArray(candidates), 'got candidates array')
+        t.ok(candidates.length === 1, '1 candidate')
+        peers[0].once('error', function (err) {
+          t.pass('error event emitted')
+          t.equal(err.message, 'Candidate function must pass (err, stream) to callback', 'correct error message')
+          t.end()
+        })
+        peers[1].relay(candidates[0], function () {})
+      })
+    })
+  })
+
+  t.test('erroring peer candidate function', function (t) {
+    function getPeers (cb) {
+      cb(null, [ function (cb) { cb(new Error('error')) } ])
+    }
+    createPeers(getPeers, function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].getPeers('test', function (err, candidates) {
+        t.error(err, 'no error')
+        t.ok(Array.isArray(candidates), 'got candidates array')
+        t.ok(candidates.length === 1, '1 candidate')
+        peers[0].once('error', function (err) {
+          t.pass('error event emitted')
+          t.equal(err.message, 'error', 'correct error message')
+          t.end()
+        })
+        peers[1].relay(candidates[0], function () {})
+      })
+    })
+  })
+
   t.end()
+})
+
+test('upgrade', function (t) {
+  t.test('upgrade on non-relayed conenction', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[1].upgrade({ lol: true }, function (err) {
+        t.ok(err, 'got error')
+        t.equal(err.message, 'Can only upgrade relayed connections', 'correct error message')
+        t.end()
+      })
+    })
+  })
+
+  t.test('upgrade', function (t) {
+    createPeers(function (err, peers) {
+      t.error(err, 'no error')
+      peers[0].relayed = peers[1].relayed = true
+      peers[0].once('upgrade', function (req, res) {
+        t.pass('remote peer emitted "upgrade" event')
+        t.deepEqual(req, { lol: true }, 'correct request data')
+        res(null)
+      })
+      peers[1].upgrade({ lol: true }, function (err) {
+        t.error(err, 'no error')
+        t.end()
+      })
+    })
+  })
 })

@@ -18,7 +18,7 @@ function isDuplex (stream) {
 }
 
 class Peer extends EventEmitter {
-  constructor (socket, networks, connectInfo) {
+  constructor (socket, networks, connectInfo, opts = {}) {
     if (!isDuplex(socket)) {
       throw new Error('socket must be a duplex stream')
     }
@@ -40,6 +40,7 @@ class Peer extends EventEmitter {
     this.connected = {}
     this.remoteNetworks = null
     this.remoteConnectInfo = null
+    this.relayed = opts.relayed
 
     this.socket = socket
     onObject(socket).on({
@@ -142,17 +143,17 @@ class Peer extends EventEmitter {
     if (!this.networks[network]) {
       let err = new Error('Peer requested an unknown network:' +
           `"${network}"`)
-      res(err.message)
+      res([ err.message ])
       return this.error(err)
     }
     var getPeers = this.networks[network]
     if (typeof getPeers !== 'function') {
       var err = new Error(`Invalid getPeers function for network "${network}"`)
-      return this.error('error', err)
+      return this.error(err)
     }
     getPeers.call(this, (err, peers) => {
       if (err) {
-        res(err.message)
+        res([ true ])
         return this.error(err)
       }
       peers = peers.filter((p) => p !== this)
@@ -228,8 +229,8 @@ class Peer extends EventEmitter {
     this.emit('incoming', stream)
   }
 
-  onUpgrade ([ transport, connectInfo ], res) {
-    this.emit('upgrade', transport, connectInfo, res)
+  onUpgrade (req, res) {
+    this.emit('upgrade', req, res)
   }
 
   onConnect (network, res) {
@@ -293,11 +294,11 @@ class Peer extends EventEmitter {
     })
   }
 
-  upgrade (transport, connectInfo, cb) {
+  upgrade (request, cb) {
     if (!this.relayed) {
       return cb(new Error('Can only upgrade relayed connections'))
     }
-    this.pxp.send('upgrade', [ transport, connectInfo ], cb)
+    this.pxp.send('upgrade', request, cb)
   }
 }
 
