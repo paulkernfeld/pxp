@@ -298,7 +298,7 @@ class Peer extends EventEmitter {
     if (!this.relayed) {
       return cb(new Error('Can only upgrade relayed connections'))
     }
-    this.pxp.send('upgrade', request, cb)
+    this.pxp.send('upgrade', request, ([ err, res ]) => cb(err, res))
   }
 }
 

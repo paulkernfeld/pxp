@@ -551,10 +551,11 @@ test('upgrade', function (t) {
       peers[0].once('upgrade', function (req, res) {
         t.pass('remote peer emitted "upgrade" event')
         t.deepEqual(req, { lol: true }, 'correct request data')
-        res(null)
+        res(null, { lol2: false })
       })
-      peers[1].upgrade({ lol: true }, function (err) {
+      peers[1].upgrade({ lol: true }, function (err, res) {
         t.error(err, 'no error')
+        t.deepEqual(res, { lol2: false }, 'correct response data')
         t.end()
       })
     })
