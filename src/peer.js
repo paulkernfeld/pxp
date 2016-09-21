@@ -5,6 +5,7 @@ const old = require('old')
 const mux = require('multiplex')
 const random = require('hat')
 const onObject = require('on-object')
+const throttle = require('throttle')
 const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
@@ -41,6 +42,7 @@ class Peer extends EventEmitter {
     this.remoteNetworks = null
     this.remoteConnectInfo = null
     this.relayed = opts.relayed
+    this.relayRateLimit = opts.relayRateLimit || 50 * 1000
 
     this.socket = socket
     onObject(socket).on({
@@ -190,7 +192,6 @@ class Peer extends EventEmitter {
   }
 
   onRelay ([ to ], res) {
-    // TODO: rate limiting
     // TODO: ensure there isn't already a relay to this destination
     var sourceStream = this.createStream(`relay:${to}`)
     var dest = this.candidates[to]
@@ -200,7 +201,11 @@ class Peer extends EventEmitter {
       return this.error(err)
     }
     var connectRelay = (destStream) => {
-      sourceStream.pipe(destStream).pipe(sourceStream)
+      sourceStream
+        .pipe(throttle(this.relayRateLimit))
+        .pipe(destStream)
+        .pipe(throttle(this.relayRateLimit))
+        .pipe(sourceStream)
       sourceStream.once('end', () => destStream.end())
       destStream.once('end', () => sourceStream.end())
       res(null)
