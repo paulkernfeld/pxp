@@ -92,6 +92,7 @@ class Peer extends EventEmitter {
     this.closed = true
     this.emit('disconnect')
     this.socket.end()
+    this.mux.unpipe(this.socket)
   }
 
   createStream (id) {
