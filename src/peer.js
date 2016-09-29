@@ -45,10 +45,12 @@ class Peer extends EventEmitter {
     this.relayRateLimit = opts.relayRateLimit || 50 * 1000
 
     this.socket = socket
+    this.close = this.close.bind(this)
     onObject(socket).on({
       error: this.error,
-      close: this.close.bind(this),
-      disconnect: this.close.bind(this)
+      close: this.close,
+      disconnect: this.close,
+      end: this.close
     })
 
     this.mux = mux()
