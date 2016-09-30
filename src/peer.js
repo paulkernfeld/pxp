@@ -93,7 +93,8 @@ class Peer extends EventEmitter {
     if (this.closed) return
     this.closed = true
     this.emit('disconnect')
-    this.socket.end()
+    if (typeof this.socket.end === 'function') this.socket.end()
+    if (typeof this.socket.destroy === 'function') this.socket.destroy()
     this.mux.unpipe(this.socket)
   }
 
