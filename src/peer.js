@@ -274,6 +274,7 @@ class Peer extends EventEmitter {
     var stream = this.createDataStream(network)
     this.pxp.send('connect', network, (err) => {
       if (err) return cb(new Error(err))
+      this.emit(`connect:${network}`, stream)
       cb(null, stream)
     })
   }
