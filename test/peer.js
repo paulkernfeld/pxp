@@ -16,6 +16,8 @@ function createStreams () {
 
 function createMockPeer (stream) {
   var mux = Mux()
+  stream.write('#PXP#')
+  stream.read(5)
   stream.pipe(mux).pipe(stream)
   var pxpStream = mux.createSharedStream('pxp')
   return PXP(pxpStream)
@@ -106,6 +108,17 @@ test('create peer instances', function (t) {
 })
 
 test('handshake', function (t) {
+  t.test('invalid magic bytes', function (t) {
+    var streams = createStreams()
+    var peer = Peer(streams[0], { foo: noopGetPeers })
+    peer.once('error', function (err) {
+      t.pass('got error event')
+      t.equal(err.message, 'Invalid magic value, peer not using PXP', 'correct error message')
+      t.end()
+    })
+    streams[1].write('some data')
+  })
+
   t.test('different versions', function (t) {
     var streams = createStreams()
     var peer = Peer(streams[0], { foo: noopGetPeers })
@@ -355,24 +368,6 @@ test('getpeers', function (t) {
           }, 'correct connectInfo')
           t.end()
         })
-      })
-    })
-  })
-
-  t.test('getPeers with duplex stream', function (t) {
-    var streams = createStreams()
-    function getPeers (cb) {
-      cb(null, [ streams[0] ])
-    }
-    createPeers(getPeers, function (err, peers) {
-      t.error(err, 'no error')
-      peers[1].getPeers('test', function (err, peers) {
-        t.error(err, 'no error')
-        t.ok(Array.isArray(peers), 'got peers array')
-        t.equal(peers.length, 1, 'peers.length === 1')
-        t.equal(typeof peers[0].id, 'string', 'peer has id')
-        t.deepEqual(peers[0].connectInfo, { relay: true, pxp: false }, 'correct connectInfo')
-        t.end()
       })
     })
   })
