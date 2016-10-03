@@ -6,10 +6,13 @@ const mux = require('multiplex')
 const random = require('hat')
 const onObject = require('on-object')
 const throttle = require('throttle')
+const { Transform } = require('stream')
+const Parser = require('stream-parser')
 const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
 const CANDIDATE_TIMEOUT = 15 * 1000
+const PXP_MAGIC = Buffer('#PXP#')
 
 function isDuplex (stream) {
   return typeof stream === 'object' &&
@@ -56,7 +59,26 @@ class Peer extends EventEmitter {
     })
 
     this.mux = mux()
-    socket.pipe(this.mux).pipe(socket)
+
+    // check magic value at beginning of stream
+    // (to ensure peer is using PXP)
+    var magicParser = new Transform()
+    Parser(magicParser)
+    magicParser._bytes(PXP_MAGIC.length, (magic) => {
+      magicParser._passthrough(Infinity)
+      if (!magic.equals(PXP_MAGIC)) {
+        let err = new Error('Invalid magic value, peer not using PXP')
+        return this.error(err)
+      }
+    })
+
+    // send magic value at beginning of stream
+    socket.write(PXP_MAGIC)
+
+    socket
+      .pipe(magicParser)
+      .pipe(this.mux)
+      .pipe(socket)
 
     this.pxp = pxp(this.createStream('pxp'))
     this.pxp.once('hello', this.onHello.bind(this))
