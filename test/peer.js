@@ -52,6 +52,10 @@ function noopGetPeers (cb) {
   cb(new Error('Noop'))
 }
 
+function startsWith (t, actual, expected, msg) {
+  return t.equal(actual.slice(0, expected.length), expected, msg)
+}
+
 test('create peer instances', function (t) {
   t.test('create with invalid stream', function (t) {
     try {
@@ -137,7 +141,7 @@ test('handshake', function (t) {
     var badPeer = createMockPeer(streams[1])
     peer.once('error', function (err) {
       t.ok(err, 'got error event')
-      t.equal(err.message, 'networks.filter is not a function', 'correct error message')
+      startsWith(t, err.message, 'networks.filter is not a function', 'correct error message')
       t.end()
     })
     badPeer.send('hello', 1, null, true)
@@ -295,7 +299,7 @@ test('getpeers', function (t) {
       t.error(err, 'no error')
       peers[0].once('error', function (err) {
         t.pass('receiving peer emitted error event')
-        t.equal(err.message, 'peers.filter is not a function',
+        startsWith(t, err.message, 'peers.filter is not a function',
           'correct error message')
         t.end()
       })
