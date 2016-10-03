@@ -34,7 +34,7 @@ function createPeers (getPeers, cb) {
     Peer(streams[0], { test: getPeers, '1': getPeers }, connectInfo),
     Peer(streams[1], { test: getPeers, '2': getPeers }, connectInfo)
   ]
-  var maybeDone = () => {
+  function maybeDone () {
     if (peers[0].ready && peers[1].ready) cb(null, peers)
   }
   peers[0].once('ready', maybeDone)
