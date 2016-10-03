@@ -18,6 +18,8 @@ function isDuplex (stream) {
     typeof stream.read === 'function'
 }
 
+// TODO: request timeouts
+
 class Peer extends EventEmitter {
   constructor (socket, networks, connectInfo, opts = {}) {
     if (!isDuplex(socket)) {
@@ -169,7 +171,7 @@ class Peer extends EventEmitter {
         var connectInfo
         if (peer instanceof Peer) {
           connectInfo = peer.getConnectInfo()
-        } else if (typeof peer === 'function' || isDuplex(peer)) {
+        } else if (typeof peer === 'function') {
           connectInfo = peer.getConnectInfo ? peer.getConnectInfo() : {
             relay: true,
             pxp: false
