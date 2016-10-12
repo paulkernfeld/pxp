@@ -8,6 +8,7 @@ const onObject = require('on-object')
 const throttle = require('throttle')
 const { Transform } = require('stream')
 const Parser = require('stream-parser')
+const assign = require('object-assign')
 const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
@@ -194,9 +195,12 @@ class Peer extends EventEmitter {
         if (peer instanceof Peer) {
           connectInfo = peer.getConnectInfo()
         } else if (typeof peer === 'function') {
-          connectInfo = peer.getConnectInfo ? peer.getConnectInfo() : {
+          connectInfo = {
             relay: true,
             pxp: false
+          }
+          if (peer.getConnectInfo) {
+            assign(connectInfo, peer.getConnectInfo())
           }
         } else {
           let err = new Error('Invalid peer object, must be a Peer instance or a function')
