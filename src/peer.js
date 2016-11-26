@@ -13,7 +13,7 @@ const pxp = require('./pxp.js')
 
 const PROTOCOL_VERSION = 1
 const CANDIDATE_TIMEOUT = 15 * 1000
-const PXP_MAGIC = Buffer('#PXP#')
+const PXP_MAGIC = Buffer.from('#PXP#')
 
 function isDuplex (stream) {
   return typeof stream === 'object' &&
